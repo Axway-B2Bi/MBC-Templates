@@ -2,7 +2,7 @@
 
 Name        : procmbc_template_modifier.s4    
 
-Project     : Framework
+Project     : Axway-B2Bi
 
 Description : Template for Modifier MBC.
 
@@ -20,19 +20,20 @@ INCLUDE "mbci_genericpropertystage.s4h" ONCE;
 INCLUDE "log_entry.s4h"                 ONCE;
 INCLUDE "log_genericevent2.s4h"         ONCE;
 INCLUDE "dataio.s4h"                    ONCE;
+INCLUDE "b2bi_userevent.s4h"            ONCE; 
 
 /*===========================================================================
                                Project INCLUDE Files
 ===========================================================================*/
 
-INCLUDE "b2biexpress.rev"               ONCE;
-INCLUDE "b2biexpress.s4h"               ONCE;
+
+#INCLUDE "myincludefile.s4h"           ONCE;
 
 /* Declare Configuration tags here */
 
-#DECLARE $ConfigTag_2     =  "Tag2"
-DECLARE $ConfigTag_Debug = "Debug (y/[n])"                           CONSTANT STRING;
-
+#DECLARE $ConfigTag_2     =  "Tag2"         CONSTANT STRING;
+#DECLARE $ConfigTag_1     =  "Tag1"         CONSTANT STRING;
+DECLARE $ConfigTag_Debug = "Debug (y/[n])" CONSTANT STRING;
 /*===========================================================================
                                IMBC_COMMON Module
 ===========================================================================*/
@@ -48,9 +49,9 @@ DECLARE MODULE IMBC_COMMON
     ------------------------------------------------------------------------------*/
     DECLARE PUBLIC STATEMENT GetInfo OUT $Name Revision OUT $Revision Description OUT $Description
     {
-        $Name        = "B2Bi Express ...";
-        $Revision    = $b2biexpressRevision;
-        $Description = "B2Bi Express ...";
+        $Name        = "B2Bi ...";
+        $Revision    = "1.0.0";
+        $Description = "B2Bi ...";
         RETURN;
     }
 }
@@ -188,21 +189,18 @@ DECLARE MODULE IMBC_HIERCHMSGENV
                               Configuration IN $ConfigurationString PRIMITIVE
     {
 
-        DECLARE $Config               RECORD Configuration;
+        DECLARE $Config              RECORD Configuration;
    
-        DECLARE $ParentId             STRING;
-        DECLARE $LoggerId             STRING;
+        DECLARE $ParentId            STRING;
+        DECLARE $LoggerId            STRING;
         DECLARE $ActivityBranch      INTEGER;
 
-        DECLARE $Event                 RECORD B2BIEXPRESS.Event;
-        DECLARE $EventInfo             RECORD B2BIEXPRESS.EventInfo;
-        DECLARE $EventCode             STRING;
+        DECLARE $EventCode           STRING;
         
-        DECLARE $DataIOHandle         RECORD DATAIO.Handle;
+        DECLARE $DataIOHandle        RECORD DATAIO.Handle;
 
-        DECLARE $MessageData          STRING;
-        DECLARE $Tmp                  STRING;    
-        DECLARE $TransactionAttribute RECORD B2BIEXPRESS.TransactionAttribute;
+        DECLARE $MessageData         STRING;
+        DECLARE $Tmp                 STRING;    
         
         TRY 
         {
@@ -222,9 +220,7 @@ DECLARE MODULE IMBC_HIERCHMSGENV
             $ActivityBranch = MBC_HIERCHMSGENV.GetActivityBranch($SessionId, $MessageId);
                          
             /* Get any attributes here if needed */     
-            
-            $TransactionAttribute = B2BIEXPRESS.GetTransactionAttribute($SessionId, $MessageId); 
-
+           
 
             /* ------------------------------------
                 Process your message here!
@@ -245,17 +241,13 @@ DECLARE MODULE IMBC_HIERCHMSGENV
                     
             /* Log the sucessful event */
             
-            $EventInfo.$Event          = B2BIEXPRESS.GetEvent($SessionId, $MessageId, B2BIEXPRESS.$Event_InboundProcessingCompleted );             
-            $EventInfo.$ParentId       = $ParentId;  
-            $EventInfo.$SessionId      = $SessionId;
-            $EventInfo.$MessageId      = $MessageId;
-            $EventInfo.$LoggerId       = $LoggerId;
-            $EventInfo.$ActivityBranch = $ActivityBranch;
-
-            B2BIEXPRESS.CreateEvent $EventInfo 
-                TransactionAttribute $TransactionAttribute
-                LogPayload $True;
-      
+				LogSuccess $SessionId
+						MessageId        $MessageId
+						LoggerId         $LoggerId
+						ActivityBranch   MBC_HIERCHMSGENV.GetActivityBranch($SessionId, $MessageId)
+						IdxParameter1    "SomeValue"
+						Parameter1       "SomeOtherValue";
+       
             /* ------
                 Done!
             -------*/
@@ -265,25 +257,11 @@ DECLARE MODULE IMBC_HIERCHMSGENV
         CATCH $Exception /* Outermost TRY/CATCH block for ProcessMessage statement */
         WHEN OTHERS 
         {
-            IF $EventCode <>""
-            {
-                $EventInfo.$Event          = B2BIEXPRESS.GetEvent($SessionId, $MessageId, $EventCode );             
-            }
-            ELSE
-            {
-                $EventInfo.$Event          = B2BIEXPRESS.GetEvent($SessionId, $MessageId, B2BIEXPRESS.$Event_GenericError);             
-                $EventInfo.$Event.$description = $LogString;
-            }             
-
-            $EventInfo.$SessionId      = $SessionId;
-            $EventInfo.$MessageId      = $MessageId;
-            $EventInfo.$LoggerId       = MBC_HIERCHMSGENV.GetLoggerId($SessionId, $MessageId);
-            $EventInfo.$ParentId       = $ParentId;  
-            $EventInfo.$ActivityBranch = MBC_HIERCHMSGENV.GetActivityBranch($SessionId, $MessageId);
-
-            B2BIEXPRESS.CreateEvent $EventInfo 
-                TransactionAttribute $TransactionAttribute
-                isEnd                $True;
+            LogError           $SessionId
+                MessageId      $MessageId
+                LoggerId       $LoggerId
+                ActivityBranch $ActivityBranch
+				Description    $Logstring;
 
             MBC_HIERCHMSGENV.StopMessage $SessionId MessageId $MessageId;
             MBC_HIERCHMSGENV.ProcessMessageDone $SessionId MessageId $MessageId;               
@@ -361,178 +339,140 @@ DECLARE MODULE IMBC_HIERCHMSGENV
         RETURN;
     }
     
+	/*()----------------------------------------------------------------------------
+	** LogSuccess
+	**----------------------------------------------------------------------------*/
+	DECLARE STATEMENT LogSuccess
+				            IN $SessionId      PRIMITIVE
+		MessageId           IN $MessageId      PRIMITIVE
+		LoggerId	        IN $LoggerId       PRIMITIVE
+		ActivityBranch	    IN $ActivityBranch     PRIMITIVE
+		IdxParameter1       IN $IdxParameter1 = ""  PRIMITIVE
+		IdxParameter2       IN $IdxParameter2 = "" PRIMITIVE
+		Parameter1          IN $Parameter1   = ""  PRIMITIVE
+		Parameter2          IN $Parameter2  = ""   PRIMITIVE
+	{
+
+		DECLARE $Event		   	   RECORD B2BI_USEREVENT.Event;
+		DECLARE $ParentLoggerIds[] STRING;
+
+		$Event.$Severity = B2BI_USEREVENT.$EventSeverity_Info;
+		$Event.$Description = Format("This is a user event");
+
+		$ParentLoggerIds[1]=MBC_HIERCHMSGENV.GetLoggerId($SessionId, $MessageId);
+
+#		$Event.$Type is optional
+
+		$Event.$Type = "UserEventType";
+		
+#		Indexed fields
+
+		$Event.$IndexData[ArraySize($Event.$IndexData) + 1].$Name = "Name_IdxParameter1";
+		$Event.$IndexData[ArraySize($Event.$IndexData)].$Value = $IdxParameter1;
+
+		$Event.$IndexData[ArraySize($Event.$IndexData) + 1].$Name = "Name_IdxParameter2";
+		$Event.$IndexData[ArraySize($Event.$IndexData)].$Value = $IdxParameter2;
+		
+#		Non-indexed fields
+
+		$Event.$Data[ArraySize($Event.$Data) + 1].$Name = "Name_Parameter1";
+		$Event.$Data[ArraySize($Event.$Data)].$Value = $Parameter1;
+	
+		$Event.$Data[ArraySize($Event.$Data) + 1].$Name = "Name_Parameter2";
+		$Event.$Data[ArraySize($Event.$Data)].$Value = $Parameter2;
+
+		TRY
+		{
+			B2BI_USEREVENT.CreateEvent $SessionId
+				MessageId $MessageId
+				LoggerId $LoggerId
+				ActivityId $ActivityBranch
+				Event $Event;
+		}
+		CATCH $ex
+		WHEN OTHERS
+		{
+			LOG "Could not create User Event";
+		}
+			
+		RETURN;
+	}
+		
     /*()----------------------------------------------------------------------------
-    ** LogSuccess
+    ** LogWarning
     **----------------------------------------------------------------------------*/
     DECLARE STATEMENT
-    LogSuccess      IN $SessionId  PRIMITIVE
-        MessageId   IN $MessageId  PRIMITIVE
-        LoggerId    IN $LoggerId   PRIMITIVE
-        ActivityId  IN $ActivityId PRIMITIVE
-        ParentId    IN $ParentId   PRIMITIVE
-        Parm1       IN $Parm1      PRIMITIVE
-        Parm2       IN $Parm2      PRIMITIVE
+    LogWarning         IN $SessionId         PRIMITIVE
+        MessageId      IN $MessageId         PRIMITIVE
+        LoggerId       IN $LoggerId          PRIMITIVE
+        ActivityBranch IN $ActivityBranch    PRIMITIVE
+        Description    IN $Description = ""  PRIMITIVE
     {
-        DECLARE $LogEvent          RECORD LOG_ENTRY.Event;
-        DECLARE $LogEventGeneric   RECORD LOG_GENERICEVENT2.LogGenericEvent2;
+		DECLARE $Event		   	RECORD B2BI_USEREVENT.Event;
 
-        DECLARE $AttributeNames[]   STRING;
-        DECLARE $AttributeValue     STRING;       
-
-        DECLARE $DataIOHandle       RECORD DATAIO.Handle;
-        DECLARE $DataIOHandlePacked RECORD DATAIO.PackedHandle;
-        DECLARE $DataIOHandleString STRING;
-            
-        /*
+       /*
          *  Create the logevent
          */    
-         
-        $LogEvent.$Description = Format("%s processed message successfully", ProgramInfo());
-        $LogEvent.$Code = 1;
-        $LogEvent.$Severity = LOG_ENTRY.$Event_SeverityInfo;
-        $LogEvent.$ActivityId = $ActivityId;
-        $LogEvent.$ParentReferences[1] = $ParentId;
-        $LogEvent.$Date = CurrentDate();
-        
-        TraceDebug $LogEvent.$Description; 
-        
-        /*
-         *  Use generic logevent
-         */    
-        /* Log all Attributes */
-         
-        TRY 
-        {
-            $AttributeNames = MBC_HIERCHMSGENV.GetAttributeNames($SessionId, $MessageId);
-        } 
-        CATCH $Exception
-        WHEN OTHERS {}
+		 
+		$Event.$Type = "UserWarningType";
+ 
 
-        FOR $i = 1 TO ARRAYSIZE($AttributeNames) {
-            TraceDebug $AttributeNames[$i];
+		$Event.$Severity = B2BI_USEREVENT.$EventSeverity_Warning;
+		$Event.$Description = $Description;
+		
+		TRY
+		{
+		B2BI_USEREVENT.CreateEvent $SessionId
+			MessageId $MessageId
+			LoggerId $LoggerId
+			ActivityId $ActivityBranch
+			Event $Event;
+		}
+		CATCH $ex
+		WHEN OTHERS
+		{
+			LOG "Could not create User Event";
+		}
+			
+		RETURN;
+	}
 
-            $AttributeValue  = MBC_HIERCHMSGENV.GetAttribute($SessionId, $MessageId, $AttributeNames[$i]);
-            TraceDebug $AttributeValue;      
-            $LogEventGeneric.$Attributes[Arraysize($LogEventGeneric.$Attributes)+1].$Name = $AttributeNames[$i];
-            $LogEventGeneric.$Attributes[Arraysize($LogEventGeneric.$Attributes)].$Value = $AttributeValue;
-        }
-
-        /*
-         *  Use generic logevent
-         */    
-
-        $LogEventGeneric.$Type =    "Application Log";
-
-        /* Searchable data elements */
-
-        $LogEventGeneric.$IndexTag[Arraysize($LogEventGeneric.$IndexTag)+1].$Name = "Parameter 1";
-        $LogEventGeneric.$IndexTag[Arraysize($LogEventGeneric.$IndexTag)].$Value =  $Parm1;
-
-        /* Non-searchable data elements */
-
-        $LogEventGeneric.$Tag[Arraysize($LogEventGeneric.$Tag)+1].$Name = "Parameter 2";
-        $LogEventGeneric.$Tag[Arraysize($LogEventGeneric.$Tag)].$Value =  $Parm1;
-
-        /* Log the Content of the Message */
-        
-        /* NOTE! This is optional and should be used sparingly */
-                  
-        $DataIOHandle = MBC_HIERCHMSGENV.GetData($SessionId, $MessageId );
-        $DataIOHandlePacked = DATAIO.TopackedHandle($DataIOHandle);
-        SERIALIZE $DataIOHandlePacked INTO $DataIOHandleString;
-        $LogEventGeneric.$Data[1] = $DataIOHandleString;
-
-        LOG_GENERICEVENT2.PackEvent $LogEventGeneric INTO $LogEvent;
-        
-        MBC_HIERCHMSGENV.CreateLoggerEvent $SessionId
-            LoggerId    $LoggerId
-            Event       $LogEvent;
-
-        RETURN;
-    }
-    
     /*()----------------------------------------------------------------------------
     ** LogError
     **----------------------------------------------------------------------------*/
     DECLARE STATEMENT
-    LogError        IN $SessionId        PRIMITIVE
-        MessageId   IN $MessageId  PRIMITIVE
-        LoggerId    IN $LoggerId         PRIMITIVE
-        ActivityId  IN $ActivityId       PRIMITIVE
-        ParentId    IN $ParentId = ""    PRIMITIVE
-        Description IN $Description = "" PRIMITIVE
+    LogError           IN $SessionId        PRIMITIVE
+        MessageId      IN $MessageId        PRIMITIVE
+        LoggerId       IN $LoggerId         PRIMITIVE
+        ActivityBranch IN $ActivityBranch   PRIMITIVE
+        Description    IN $Description = "" PRIMITIVE
     {
-        DECLARE $LogEvent           RECORD LOG_ENTRY.Event;
-        DECLARE $LogEventGeneric    RECORD LOG_GENERICEVENT2.LogGenericEvent2;
+		DECLARE $Event		   	RECORD B2BI_USEREVENT.Event;
 
-        DECLARE $AttributeNames[]   STRING;
-        DECLARE $AttributeValue     STRING;       
-
-        DECLARE $DataIOHandle       RECORD DATAIO.Handle;
-        DECLARE $DataIOHandlePacked RECORD DATAIO.PackedHandle;
-        DECLARE $DataIOHandleString STRING;
-            
-        /*
+       /*
          *  Create the logevent
-         */ 
-        IF $Description = ""
-        {
-            $LogEvent.$Description = $Logstring;
-        } 
-        ELSE
-        {  
-            $LogEvent.$Description = $Description;
-        }
-        $LogEvent.$Code = 1;
-        $LogEvent.$Severity = LOG_ENTRY.$Event_SeverityError;
-        $LogEvent.$ActivityId = $ActivityId;
-        IF ($ParentId <> "") {
-            $LogEvent.$ParentReferences[1] = $ParentId;
-        }
-        $LogEvent.$Date = CurrentDate();
-        
-        /* Log all Attributes */
-         
-        TRY 
-        {
-            $AttributeNames = MBC_HIERCHMSGENV.GetAttributeNames($SessionId, $MessageId);
-        } 
-        CATCH $Exception
-        WHEN OTHERS {}
-
-        FOR $i = 1 TO ARRAYSIZE($AttributeNames) {
-            TraceDebug $AttributeNames[$i];
-
-            $AttributeValue  = MBC_HIERCHMSGENV.GetAttribute($SessionId, $MessageId, $AttributeNames[$i]);
-            TraceDebug $AttributeValue;      
-            $LogEventGeneric.$Attributes[Arraysize($LogEventGeneric.$Attributes)+1].$Name = $AttributeNames[$i];
-            $LogEventGeneric.$Attributes[Arraysize($LogEventGeneric.$Attributes)].$Value = $AttributeValue;
-        }
-
-        /*
-         *  Use generic logevent
          */    
-        $LogEventGeneric.$Type =    "Application Log";
 
-        /* Log the Content of the Message */
-        
-        /* This is optional and should be used sparingly */
-                  
-        $DataIOHandle = MBC_HIERCHMSGENV.GetData($SessionId, $MessageId );
-        $DataIOHandlePacked = DATAIO.TopackedHandle($DataIOHandle);
-        SERIALIZE $DataIOHandlePacked INTO $DataIOHandleString;
-        $LogEventGeneric.$Data[1] = $DataIOHandleString;
+		$Event.$Severity = B2BI_USEREVENT.$EventSeverity_Error;
+		$Event.$Description = $Description;
 
-        LOG_GENERICEVENT2.PackEvent $LogEventGeneric INTO $LogEvent;
-        
-        MBC_HIERCHMSGENV.CreateLoggerEvent $SessionId
-            LoggerId    $LoggerId
-            Event       $LogEvent;
-
-        RETURN;
-    }
-
-    
+		$Event.$Type = "UserErrorType";
+		
+		TRY
+		{
+		B2BI_USEREVENT.CreateEvent $SessionId
+			MessageId $MessageId
+			LoggerId $LoggerId
+			ActivityId $ActivityBranch
+			Event $Event;
+		}
+		CATCH $ex
+		WHEN OTHERS{
+			LOG "No good";
+		}
+			
+		RETURN;
+	}
     
     
 } /* END MODULE IMBC_HIERCHMSGENV */
